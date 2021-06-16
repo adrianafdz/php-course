@@ -18,6 +18,8 @@
 
 	// Get current positions
 	$posArr = $pdo->query("SELECT * FROM Position WHERE profile_id = ".$row['profile_id']);
+	// Get current education
+	$eduArr = $pdo->query("SELECT e.year, i.name FROM Education e JOIN Institution i ON e.institution_id = i.institution_id WHERE e.profile_id = ".$row['profile_id']);
 
 ?>
 
@@ -40,6 +42,21 @@
 		<p><?= htmlentities($row['headline']); ?></p>
 		<p>Summary:</p>
 		<p><?= htmlentities($row['summary']); ?></p>
+		<p>Education</p>
+		<ul>
+
+			<?php
+			$i = 1;
+			while ($e = $eduArr->fetch(PDO::FETCH_ASSOC)) {
+			?>
+				<li>
+					<?= htmlentities($e['year']) ?>: <?= htmlentities($e['name']) ?>
+				</li>
+			<?php
+			}
+			?>
+
+		</ul>
 		<p>Position</p>
 		<ul>
 

@@ -2,6 +2,7 @@
 session_start();
 require_once "connection.php";
 require_once "util.php";
+require_once "head.php";
 
 if ( !isset($_SESSION['name']) ) {
 	die('ACCESS DENIED');
@@ -9,28 +10,6 @@ if ( !isset($_SESSION['name']) ) {
 
 if ( isset($_POST['cancel']) ) {
 	header("Location: index.php");
-}
-
-function validatePos() {
-  	for($i=1; $i<=9; $i++) {
-    	if ( ! isset($_POST['year'.$i]) ) continue;
-    	if ( ! isset($_POST['desc'.$i]) ) continue;
-
-    	$year = $_POST['year'.$i];
-    	$desc = $_POST['desc'.$i];
-
-    	if ( strlen($year) == 0 || strlen($desc) == 0 ) {
-      		$_SESSION['error'] = "All fields are required";
-			header("Location: add.php");
-			return;
-    	}
-
-    	if ( ! is_numeric($year) ) {
-      		$_SESSION['error'] = "Position year must be numeric";
-			header("Location: add.php");
-			return;
-    	}
-  	}
 }
 
 if ( isset($_POST['add'])) {
@@ -47,7 +26,10 @@ if ( isset($_POST['add'])) {
 		return;
 	} 
 
-	validatePos();
+	if (!validatePos() || !validateEdu()) {
+		header("Location: add.php");
+		return;
+	}
 
 	$query = $pdo->prepare('INSERT INTO profile (user_id, first_name, last_name, email, headline, summary)
 			VALUES ( :uid, :fn, :ln, :em, :he, :su)');
@@ -62,27 +44,12 @@ if ( isset($_POST['add'])) {
 	));
 
 	$profile_id = $pdo->lastInsertId();
-	$rank = 1;
-	for($i=1; $i<=9; $i++) {
-	  if ( ! isset($_POST['year'.$i]) ) continue;
-	  if ( ! isset($_POST['desc'.$i]) ) continue;
 
-	  $year = $_POST['year'.$i];
-	  $desc = $_POST['desc'.$i];
-	  $stmt = $pdo->prepare('INSERT INTO Position
-	    (profile_id, rank, year, description)
-	    VALUES ( :pid, :rank, :year, :desc)');
+	// Insert new positions
+	insertPositions($pdo, $row['profile_id']);
 
-	  $stmt->execute(array(
-	  ':pid' => $profile_id,
-	  ':rank' => $rank,
-	  ':year' => $year,
-	  ':desc' => $desc)
-	  );
-
-	  $rank++;
-
-	}
+	// Insert education
+	insertEducation($pdo, $row['profile_id']);
 
 	$_SESSION['success'] = "Profile added";
 	header("Location: index.php");
@@ -95,7 +62,6 @@ if ( isset($_POST['add'])) {
 <html>
 <head>
 	<title>Adriana Fernández López</title>
-	<?php require_once "bootstrap.php"; ?>
 </head>
 <body>
 	<div class="container" style="margin-bottom: 50px;">
@@ -111,6 +77,16 @@ if ( isset($_POST['add'])) {
 			<input type="text" name="headline" size="50">
 			<p>Summary</p>
 			<textarea name="summary" rows="10" cols="50"></textarea><br>
+			<p style="margin-top: 15px">Education: <button onclick="addEducation(); return false;">+</button></p>
+			<div id="educations">
+				<template id="temp-edu">
+					
+					  <p>Year: <input class="year" type="text" value="">
+					  <input class="btn" type="button" value="-"></p>
+					  School: <input type="text" size="80" class="school" value="" />
+					
+				</template>			
+			</div>
 			<p>Position: <button onclick="addPosition(); return false;">+</button></p>
 			<div id="positions">
 				<template id="temp">
@@ -130,31 +106,62 @@ if ( isset($_POST['add'])) {
 </body>
 
 <script type="text/javascript">
-	let area = $('#positions');
-	let temp = $('#temp').html();
-	let num = 1;
-
-	console.log(area);
+	let posArea = $('#positions');
+	let posTemp = $('#temp').html();
+	let posNum = 1;
 
 	function addPosition() {
-		if (num==9) {
+		if (posNum==9) {
 			alert("You can't add more positions.");
 			return;
 		}
 
 		let position = $('<div></div>');
-		let id = `position${num}`;
+		let id = `position${posNum}`;
 		
 		position.attr("id", id);
-		position.append(temp);
+		position.append(posTemp);
 
-		position.find(".year").attr("name", `year${num}`);
-		position.find(".txta").attr("name", `desc${num}`);
+		position.find(".year").attr("name", `year${posNum}`);
+		position.find(".txta").attr("name", `desc${posNum}`);
 
 		position.find(".btn").attr("onclick", `$('#${id}').remove(); return false;`);
 		
-		position.appendTo(area);
-		num++;
+		position.appendTo(posArea);
+		posNum++;
+	}
+
+	let eduArea = $('#educations');
+	let eduTemp = $('#temp-edu').html();
+	let eduNum = 1;
+
+	$('.school').autocomplete({
+			source: "school.php"
+		});
+
+	function addEducation() {
+		if (eduNum==9) {
+			alert("You can't add more education.");
+			return;
+		}
+
+		let edu = $('<div style="margin-bottom: 15px"></div>');
+		let id = `education${eduNum}`;
+		
+		edu.attr("id", id);
+		edu.append(eduTemp);
+
+		edu.find(".year").attr("name", `edu_year${eduNum}`);
+		edu.find(".school").attr("name", `edu_school${eduNum}`);
+
+		edu.find(".btn").attr("onclick", `$('#${id}').remove(); return false;`);
+		
+		edu.appendTo(eduArea);
+
+		$('.school').autocomplete({
+			source: "school.php"
+		});
+		eduNum++;
 	}
 </script>
 

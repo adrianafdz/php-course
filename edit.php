@@ -2,6 +2,7 @@
 	session_start();
 	require_once "connection.php";
 	require_once "util.php";
+	require_once "head.php";
 
 	if ( !isset($_SESSION['name']) ) {
 		die('ACCESS DENIED');
@@ -11,10 +12,11 @@
 		header("Location: index.php");
 	}
 
-	$query = $pdo->prepare("SELECT * FROM profile WHERE profile_id = :pid");
+	$query = $pdo->prepare("SELECT * FROM profile WHERE profile_id = :pid AND user_id = :uid");
 
 	$query->execute(array(
-		':pid' => $_GET['profile_id']
+		':pid' => $_GET['profile_id'],
+		':uid' => $_SESSION['user_id']
 	));
 
 	$row = $query->fetch(PDO::FETCH_ASSOC);
@@ -31,6 +33,8 @@
 
 	// Get current positions
 	$posArr = $pdo->query("SELECT * FROM Position WHERE profile_id = ".$row['profile_id']);
+	// Get current education
+	$eduArr = $pdo->query("SELECT e.year, i.name FROM Education e JOIN Institution i ON e.institution_id = i.institution_id WHERE e.profile_id = ".$row['profile_id']);
 
 	if ( isset($_POST['save'])) {
 
@@ -45,6 +49,11 @@
 			header("Location: edit.php?profile_id=".$row['profile_id']);
 			return;
 		} 
+
+		if (!validatePos() || !validateEdu()) {
+			header("Location: edit.php?profile_id=".$row['profile_id']);
+			return;
+		}
 
 		$query = $pdo->prepare('UPDATE profile SET first_name = :fn , last_name = :ln , email = :em , headline = :he , summary = :su WHERE profile_id = :pid');
 			
@@ -61,27 +70,15 @@
 		$stmt = $pdo->prepare('DELETE FROM Position WHERE profile_id=:pid');
 		$stmt->execute(array( ':pid' => $row['profile_id']));
 
+		// Clear out the old education entries
+		$stmt = $pdo->prepare('DELETE FROM Education WHERE profile_id=:pid');
+		$stmt->execute(array( ':pid' => $row['profile_id']));
+
 		// Insert new positions
-		$rank = 1;
-			for($i=1; $i<=9; $i++) {
-				if ( ! isset($_POST['year'.$i]) ) continue;
-				if ( ! isset($_POST['desc'.$i]) ) continue;
+		insertPositions($pdo, $row['profile_id']);
 
-				$year = $_POST['year'.$i];
-				$desc = $_POST['desc'.$i];
-				$stmt = $pdo->prepare('INSERT INTO Position
-					(profile_id, rank, year, description)
-					VALUES ( :pid, :rank, :year, :desc)');
-
-				$stmt->execute(array(
-				':pid' => $row['profile_id'],
-				':rank' => $rank,
-				':year' => $year,
-				':desc' => $desc)
-				);
-
-				$rank++;
-		}
+		// Insert education
+		insertEducation($pdo, $row['profile_id']);
 		
 		$_SESSION['success'] = "Profile edited";
 		header("Location: index.php");
@@ -94,7 +91,6 @@
 <html>
 <head>
 	<title>Adriana Fernández López</title>
-	<?php require_once "bootstrap.php"; ?>
 </head>
 <body>
 	<div class="container" style="margin-bottom: 50px;">
@@ -110,6 +106,33 @@
 			<input type="text" name="headline" size="50" value="<?= htmlentities($row['headline']) ?>">
 			<p>Summary</p>
 			<textarea name="summary" rows="10" cols="50"><?= htmlentities($row['summary']) ?></textarea><br>
+			<p style="margin-top: 15px">Education: <button onclick="addEducation(); return false;">+</button></p>
+
+			<?php
+			$i = 1;
+			while ($e = $eduArr->fetch(PDO::FETCH_ASSOC)) {
+				?>
+				<div class="education" id="education<?= $i ?>">
+					<p>Year: <input class="year" type="text" value="<?= htmlentities($e['year'])?>" name="edu_year<?= $i?>">
+					<input type="button" value="-" 
+				  onclick="$(this).closest('div').remove()"></p>
+					School: <input type="text" size="80" class="school" value="<?= htmlentities($e['name'])?>" name="edu_school<?= $i ?>" />
+				</div>
+
+			<?php
+			$i++;
+			}
+			?>
+
+			<div id="educations">
+				<template id="temp-edu">
+					
+					  <p>Year: <input class="year" type="text" value="">
+					  <input class="btn" type="button" value="-"></p>
+					  School: <input type="text" size="80" class="school" value="" />
+					
+				</template>			
+			</div>
 			<p>Position: <button onclick="addPosition(); return false;">+</button></p>
 
 			<?php
@@ -146,31 +169,63 @@
 	
 </body>
 <script type="text/javascript">
-	let area = $('#positions');
-	let temp = $('#temp').html();
-	let num = $('.position').length;
+	let posArea = $('#positions');
+	let posTemp = $('#temp').html();
+	let posNum = $('.position').length;
+
 
 	function addPosition() {
-		if (num==9) {
+		if (posNum==9) {
 			alert("You can't add more positions.");
 			return;
 		}
 
-		num += 1;
-
 		let position = $('<div></div>');
-		let id = `position${num}`;
+		let id = `position${posNum}`;
 		
 		position.attr("id", id);
-		position.append(temp);
+		position.append(posTemp);
 
-		position.find(".year").attr("name", `year${num}`);
-		position.find(".txta").attr("name", `desc${num}`);
+		position.find(".year").attr("name", `year${posNum}`);
+		position.find(".txta").attr("name", `desc${posNum}`);
 
 		position.find(".btn").attr("onclick", `$('#${id}').remove(); return false;`);
 		
-		position.appendTo(area);
-		num++;
+		position.appendTo(posArea);
+		posNum++;
+	}
+
+	let eduArea = $('#educations');
+	let eduTemp = $('#temp-edu').html();
+	let eduNum = $('.education').length;
+
+	$('.school').autocomplete({
+			source: "school.php"
+		});
+
+	function addEducation() {
+		if (eduNum==9) {
+			alert("You can't add more education.");
+			return;
+		}
+
+		let edu = $('<div style="margin-bottom: 15px"></div>');
+		let id = `education${eduNum}`;
+		
+		edu.attr("id", id);
+		edu.append(eduTemp);
+
+		edu.find(".year").attr("name", `edu_year${eduNum}`);
+		edu.find(".school").attr("name", `edu_school${eduNum}`);
+
+		edu.find(".btn").attr("onclick", `$('#${id}').remove(); return false;`);
+		
+		edu.appendTo(eduArea);
+
+		$('.school').autocomplete({
+			source: "school.php"
+		});
+		eduNum++;
 	}
 </script>
 
